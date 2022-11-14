@@ -102,13 +102,13 @@ typedef struct NvmeSubsystem {
 
     struct {
         char *nqn;
-
         struct {
             bool     enabled;
             uint64_t runs;
             uint16_t nruh;
             uint32_t nrg;
         } fdp;
+        bool ocp;
     } params;
 } NvmeSubsystem;
 
