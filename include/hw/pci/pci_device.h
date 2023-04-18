@@ -237,6 +237,10 @@ static inline MemTxResult pci_dma_rw(PCIDevice *dev, dma_addr_t addr,
                                      void *buf, dma_addr_t len,
                                      DMADirection dir, MemTxAttrs attrs)
 {
+    if (pci_is_express(dev) && dev->exp.atc.enabled && pci_iommu_enabled(dev)) {
+        return pcie_ats_dma_rw(dev, addr, buf, len, dir, attrs);
+    }
+
     return dma_memory_rw(pci_get_address_space(dev), addr, buf, len,
                          dir, attrs);
 }

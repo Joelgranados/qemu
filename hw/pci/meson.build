@@ -8,6 +8,7 @@ pci_ss.add(files(
   'pci-hmp-cmds.c',
   'pci-qmp-cmds.c',
   'pcie_sriov.c',
+  'pcie_ats.c',
   'shpc.c',
   'slotid_cap.c'
 ))

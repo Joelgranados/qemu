@@ -85,6 +85,9 @@ static Property pci_props[] = {
                     QEMU_PCIE_ERR_UNC_MASK_BITNR, true),
     DEFINE_PROP_BIT("x-pcie-ari-nextfn-1", PCIDevice, cap_present,
                     QEMU_PCIE_ARI_NEXTFN_1_BITNR, false),
+    DEFINE_PROP_BIT("x-pcie-ats", PCIDevice, cap_present,
+                    QEMU_PCIE_CAP_ATS_BITNR, false),
+    DEFINE_PROP_UINT32("x-pcie-ats-cache-size", PCIDevice, exp.atc.size, 64),
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -1251,6 +1254,7 @@ static PCIDevice *do_pci_register_device(PCIDevice *pci_dev,
     pci_dev->config_write = config_write;
     bus->devices[devfn] = pci_dev;
     pci_dev->version_id = 2; /* Current pci device vmstate version */
+
     return pci_dev;
 }
 
@@ -1295,6 +1299,15 @@ static void pci_qdev_unrealize(DeviceState *dev)
         g_sequence_remove(g_sequence_lookup(used_indexes,
                           GINT_TO_POINTER(pci_dev->acpi_index),
                           g_cmp_uint32, NULL));
+    }
+
+    if (pci_dev->cap_present & QEMU_PCIE_CAP_ATS) {
+        /* Destroy the IOMMU notifiers */
+        PCIEATSIOMMU *iommu;
+        QLIST_FOREACH(iommu, &pci_dev->exp.atc.iommu_list, iommu_next) {
+            memory_region_unregister_iommu_notifier(iommu->mr,
+                                                    &iommu->notifier);
+        }
     }
 }
 
@@ -1619,6 +1632,7 @@ void pci_default_write_config(PCIDevice *d, uint32_t addr, uint32_t val_in, int 
     msi_write_config(d, addr, val_in, l);
     msix_write_config(d, addr, val_in, l);
     pcie_sriov_config_write(d, addr, val_in, l);
+    pcie_ats_write_config(d, addr, val_in, l);
 }
 
 /***********************************************************/
@@ -2158,6 +2172,25 @@ static void pci_qdev_realize(DeviceState *qdev, Error **errp)
     pci_set_power(pci_dev, true);
 
     pci_dev->msi_trigger = pci_msi_trigger;
+
+    if (pci_dev->cap_present & QEMU_PCIE_CAP_ATS) {
+        AddressSpace *as = pci_device_iommu_address_space(pci_dev);
+
+        qemu_mutex_init(&pci_dev->exp.atc.lock);
+
+        pci_dev->exp.atc.h = g_hash_table_new_full(g_int64_hash, g_int64_equal,
+                                                   NULL, g_free);
+        QTAILQ_INIT(&pci_dev->exp.atc.lru);
+
+        pci_dev->exp.atc.iommu_listener = (MemoryListener) {
+            .name = "pci-iommu",
+            .region_add = pcie_ats_iommu_region_add,
+            .region_del = pcie_ats_iommu_region_del,
+        };
+
+        memory_listener_register(&pci_dev->exp.atc.iommu_listener, as);
+
+    }
 }
 
 static PCIDevice *pci_new_internal(int devfn, bool multifunction,
@@ -2900,10 +2933,51 @@ void pci_set_power(PCIDevice *d, bool state)
     }
 }
 
+static void pci_device_get_iotlb_hits(Object *obj, Visitor *v,
+                                      const char *name, void *opaque,
+                                      Error **errp)
+{
+    PCIDevice *dev = PCI_DEVICE(obj);
+    uint64_t hits = dev->exp.atc.stats.hits;
+
+    visit_type_uint64(v, name, &hits, errp);
+}
+
+static void pci_device_get_iotlb_misses(Object *obj, Visitor *v,
+                                        const char *name, void *opaque,
+                                        Error **errp)
+{
+    PCIDevice *dev = PCI_DEVICE(obj);
+    uint64_t misses = dev->exp.atc.stats.misses;
+
+    visit_type_uint64(v, name, &misses, errp);
+}
+
+static void pci_device_get_iotlb_evictions(Object *obj, Visitor *v,
+                                           const char *name, void *opaque,
+                                           Error **errp)
+{
+    PCIDevice *dev = PCI_DEVICE(obj);
+    uint64_t evictions = dev->exp.atc.stats.evictions;
+
+    visit_type_uint64(v, name, &evictions, errp);
+}
+
+static void pci_device_instance_init(Object *obj)
+{
+    object_property_add(obj, "atc.hits", "uint64",
+                        pci_device_get_iotlb_hits, NULL, NULL, NULL);
+    object_property_add(obj, "atc.misses", "uint64",
+                        pci_device_get_iotlb_misses, NULL, NULL, NULL);
+    object_property_add(obj, "atc.evictions", "uint64",
+                        pci_device_get_iotlb_evictions, NULL, NULL, NULL);
+}
+
 static const TypeInfo pci_device_type_info = {
     .name = TYPE_PCI_DEVICE,
     .parent = TYPE_DEVICE,
     .instance_size = sizeof(PCIDevice),
+    .instance_init = pci_device_instance_init,
     .abstract = true,
     .class_size = sizeof(PCIDeviceClass),
     .class_init = pci_device_class_init,

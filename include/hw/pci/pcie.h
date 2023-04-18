@@ -25,6 +25,7 @@
 #include "hw/pci/pcie_regs.h"
 #include "hw/pci/pcie_aer.h"
 #include "hw/pci/pcie_sriov.h"
+#include "hw/pci/pcie_ats.h"
 #include "hw/hotplug.h"
 
 typedef struct PCIEPort PCIEPort;
@@ -82,6 +83,9 @@ struct PCIExpressDevice {
     uint16_t sriov_cap;
     PCIESriovPF sriov_pf;
     PCIESriovVF sriov_vf;
+
+    /* ATS */
+    PCIEATC atc;
 };
 
 #define COMPAT_PROP_PCP "power_controller_present"
@@ -141,6 +145,8 @@ void pcie_acs_reset(PCIDevice *dev);
 void pcie_ari_init(PCIDevice *dev, uint16_t offset);
 void pcie_dev_ser_num_init(PCIDevice *dev, uint16_t offset, uint64_t ser_num);
 void pcie_ats_init(PCIDevice *dev, uint16_t offset, bool aligned);
+void pcie_ats_write_config(PCIDevice *dev, uint32_t addr, uint32_t val,
+                           int len);
 
 void pcie_cap_slot_pre_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                                Error **errp);

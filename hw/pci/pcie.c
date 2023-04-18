@@ -1140,6 +1140,36 @@ void pcie_ats_init(PCIDevice *dev, uint16_t offset, bool aligned)
     pci_set_word(dev->wmask + dev->exp.ats_cap + PCI_ATS_CTRL, 0x800f);
 }
 
+void pcie_ats_write_config(PCIDevice *dev, uint32_t addr, uint32_t val,
+                           int len)
+{
+    uint32_t off;
+    uint16_t ats_cap = dev->exp.ats_cap;
+
+    if (!ats_cap || addr < ats_cap) {
+        return;
+    }
+
+    off = addr - ats_cap;
+    if (off >= PCI_EXT_CAP_ATS_SIZEOF) {
+        return;
+    }
+
+    trace_pcie_ats_write_config(dev->name, pci_dev_bus_num(dev),
+                                PCI_SLOT(dev->devfn), PCI_FUNC(dev->devfn),
+                                off, val);
+
+    if (range_covers_byte(off, len, PCI_ATS_CTRL)) {
+        if (val & PCI_ATS_CTRL_ENABLE) {
+            pcie_ats_reset(dev);
+            dev->exp.atc.enabled = true;
+        } else {
+            pcie_ats_reset(dev);
+            dev->exp.atc.enabled = false;
+        }
+    }
+}
+
 /* ACS (Access Control Services) */
 void pcie_acs_init(PCIDevice *dev, uint16_t offset)
 {
