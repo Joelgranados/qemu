@@ -317,6 +317,12 @@ struct IntelIOMMUState {
      * per-IOMMU IOTLB cache, and context entry cache in VTDAddressSpace.
      */
     QemuMutex iommu_lock;
+
+    struct {
+        struct {
+            uint64_t hits, misses, evictions;
+        } iotlb;
+    } stats;
 };
 
 /* Find the VTD Address space associated with the given bus pointer,

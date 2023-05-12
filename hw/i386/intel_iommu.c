@@ -378,6 +378,8 @@ static void vtd_evict_iotlb_entry(IntelIOMMUState *s)
 
     QTAILQ_REMOVE(&s->iotlb_lru, victim, lru);
     g_hash_table_remove(s->iotlb, victim->key);
+
+    qatomic_inc(&s->stats.iotlb.evictions);
 }
 
 static void vtd_reset_caches(IntelIOMMUState *s)
@@ -408,6 +410,8 @@ static VTDIOTLBEntry *vtd_lookup_iotlb(IntelIOMMUState *s, uint16_t source_id,
         key.pasid = pasid;
         entry = g_hash_table_lookup(s->iotlb, &key);
         if (entry) {
+            qatomic_inc(&s->stats.iotlb.hits);
+
             trace_vtd_iotlb_page_hit(vtd_iotlb_hash(&key), key.gfn, level,
                                      addr, entry->slpte, entry->mask,
                                      source_id, pasid, entry->domain_id);
@@ -422,6 +426,8 @@ static VTDIOTLBEntry *vtd_lookup_iotlb(IntelIOMMUState *s, uint16_t source_id,
 
 out:
     if (!entry) {
+        qatomic_inc(&s->stats.iotlb.misses);
+
         trace_vtd_iotlb_page_miss(addr, source_id, pasid);
     }
 
@@ -4424,6 +4430,43 @@ static void vtd_realize(DeviceState *dev, Error **errp)
     qemu_add_machine_init_done_notifier(&vtd_machine_done_notify);
 }
 
+static void vtd_get_iotlb_hits(Object *obj, Visitor *v, const char *name,
+                               void *opaque, Error **errp)
+{
+    IntelIOMMUState *s = INTEL_IOMMU_DEVICE(obj);
+    uint64_t hits = s->stats.iotlb.hits;
+
+    visit_type_uint64(v, name, &hits, errp);
+}
+
+static void vtd_get_iotlb_misses(Object *obj, Visitor *v, const char *name,
+                                 void *opaque, Error **errp)
+{
+    IntelIOMMUState *s = INTEL_IOMMU_DEVICE(obj);
+    uint64_t misses = s->stats.iotlb.misses;
+
+    visit_type_uint64(v, name, &misses, errp);
+}
+
+static void vtd_get_iotlb_evictions(Object *obj, Visitor *v, const char *name,
+                                    void *opaque, Error **errp)
+{
+    IntelIOMMUState *s = INTEL_IOMMU_DEVICE(obj);
+    uint64_t evictions = s->stats.iotlb.evictions;
+
+    visit_type_uint64(v, name, &evictions, errp);
+}
+
+static void vtd_instance_init(Object *obj)
+{
+    object_property_add(obj, "iotlb.hits", "uint64",
+                        vtd_get_iotlb_hits, NULL, NULL, NULL);
+    object_property_add(obj, "iotlb.misses", "uint64",
+                        vtd_get_iotlb_misses, NULL, NULL, NULL);
+    object_property_add(obj, "iotlb.evictions", "uint64",
+                        vtd_get_iotlb_evictions, NULL, NULL, NULL);
+}
+
 static void vtd_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
@@ -4445,6 +4488,7 @@ static const TypeInfo vtd_info = {
     .name          = TYPE_INTEL_IOMMU_DEVICE,
     .parent        = TYPE_X86_IOMMU_DEVICE,
     .instance_size = sizeof(IntelIOMMUState),
+    .instance_init = vtd_instance_init,
     .class_init    = vtd_class_init,
 };
 
