@@ -438,7 +438,7 @@ static void vtd_update_iotlb(IntelIOMMUState *s, uint16_t source_id,
     struct vtd_iotlb_key *key = g_malloc(sizeof(*key));
     uint64_t gfn = vtd_get_iotlb_gfn(addr, level);
 
-    if (g_hash_table_size(s->iotlb) >= VTD_IOTLB_MAX_SIZE) {
+    if (g_hash_table_size(s->iotlb) >= s->iotlb_maxsize) {
         vtd_evict_iotlb_entry(s);
     }
 
@@ -3431,6 +3431,7 @@ static Property vtd_properties[] = {
     DEFINE_PROP_BOOL("x-pasid-mode", IntelIOMMUState, pasid, false),
     DEFINE_PROP_BOOL("dma-drain", IntelIOMMUState, dma_drain, true),
     DEFINE_PROP_BOOL("dma-translation", IntelIOMMUState, dma_translation, true),
+    DEFINE_PROP_UINT32("x-iotlb-maxsize", IntelIOMMUState, iotlb_maxsize, 1024),
     DEFINE_PROP_END_OF_LIST(),
 };
 
