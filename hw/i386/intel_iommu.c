@@ -283,6 +283,10 @@ static gboolean vtd_hash_remove_by_domain(gpointer key, gpointer value,
     bool remove = entry->domain_id == info->domain_id;
 
     if (remove) {
+        trace_vtd_iotlb_page_purge(vtd_iotlb_hash(entry->key), entry->gfn,
+                                   entry->slpte, entry->mask, entry->pasid,
+                                   entry->domain_id);
+
         QTAILQ_REMOVE(&info->s->iotlb_lru, entry, lru);
     }
 
@@ -313,6 +317,10 @@ static gboolean vtd_hash_remove_by_page(gpointer key, gpointer value,
              (entry->gfn == gfn_tlb));
 
     if (remove) {
+        trace_vtd_iotlb_page_purge(vtd_iotlb_hash(entry->key), entry->gfn,
+                                   entry->slpte, entry->mask, entry->pasid,
+                                   entry->domain_id);
+
         QTAILQ_REMOVE(&info->s->iotlb_lru, entry, lru);
     }
 
@@ -400,6 +408,10 @@ static VTDIOTLBEntry *vtd_lookup_iotlb(IntelIOMMUState *s, uint16_t source_id,
         key.pasid = pasid;
         entry = g_hash_table_lookup(s->iotlb, &key);
         if (entry) {
+            trace_vtd_iotlb_page_hit(vtd_iotlb_hash(&key), key.gfn, level,
+                                     addr, entry->slpte, entry->mask,
+                                     source_id, pasid, entry->domain_id);
+
             /* update lru */
             QTAILQ_REMOVE(&s->iotlb_lru, entry, lru);
             QTAILQ_INSERT_HEAD(&s->iotlb_lru, entry, lru);
@@ -409,6 +421,10 @@ static VTDIOTLBEntry *vtd_lookup_iotlb(IntelIOMMUState *s, uint16_t source_id,
     }
 
 out:
+    if (!entry) {
+        trace_vtd_iotlb_page_miss(addr, source_id, pasid);
+    }
+
     return entry;
 }
 
@@ -422,7 +438,6 @@ static void vtd_update_iotlb(IntelIOMMUState *s, uint16_t source_id,
     struct vtd_iotlb_key *key = g_malloc(sizeof(*key));
     uint64_t gfn = vtd_get_iotlb_gfn(addr, level);
 
-    trace_vtd_iotlb_page_update(source_id, addr, slpte, domain_id);
     if (g_hash_table_size(s->iotlb) >= VTD_IOTLB_MAX_SIZE) {
         vtd_evict_iotlb_entry(s);
     }
@@ -439,6 +454,9 @@ static void vtd_update_iotlb(IntelIOMMUState *s, uint16_t source_id,
     entry->mask = vtd_slpt_level_page_mask(level);
     entry->pasid = pasid;
     entry->key = key;
+
+    trace_vtd_iotlb_page_update(vtd_iotlb_hash(key), gfn, level, addr, slpte,
+                                entry->mask, source_id, pasid, domain_id);
 
     assert(!g_hash_table_lookup(s->iotlb, key));
 
@@ -1959,8 +1977,6 @@ static bool vtd_do_iommu_translate(VTDAddressSpace *vtd_as, PCIBus *bus,
     if (!rid2pasid) {
         iotlb_entry = vtd_lookup_iotlb(s, source_id, pasid, addr);
         if (iotlb_entry) {
-            trace_vtd_iotlb_page_hit(source_id, addr, iotlb_entry->slpte,
-                                     iotlb_entry->domain_id);
             slpte = iotlb_entry->slpte;
             access_flags = iotlb_entry->access_flags;
             page_mask = iotlb_entry->mask;
@@ -2037,8 +2053,6 @@ static bool vtd_do_iommu_translate(VTDAddressSpace *vtd_as, PCIBus *bus,
     if (rid2pasid) {
         iotlb_entry = vtd_lookup_iotlb(s, source_id, pasid, addr);
         if (iotlb_entry) {
-            trace_vtd_iotlb_page_hit(source_id, addr, iotlb_entry->slpte,
-                                     iotlb_entry->domain_id);
             slpte = iotlb_entry->slpte;
             access_flags = iotlb_entry->access_flags;
             page_mask = iotlb_entry->mask;
