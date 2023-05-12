@@ -290,6 +290,7 @@ struct IntelIOMMUState {
 
     uint32_t context_cache_gen;     /* Should be in [1,MAX] */
     GHashTable *iotlb;              /* IOTLB */
+    uint32_t iotlb_maxsize;
     QTAILQ_HEAD(, VTDIOTLBEntry) iotlb_lru;
 
     GHashTable *vtd_address_spaces;             /* VTD address spaces */
