@@ -279,8 +279,14 @@ static gboolean vtd_hash_remove_by_domain(gpointer key, gpointer value,
                                           gpointer user_data)
 {
     VTDIOTLBEntry *entry = (VTDIOTLBEntry *)value;
-    uint16_t domain_id = *(uint16_t *)user_data;
-    return entry->domain_id == domain_id;
+    VTDIOTLBDomainInvInfo *info = (VTDIOTLBDomainInvInfo *)user_data;
+    bool remove = entry->domain_id == info->domain_id;
+
+    if (remove) {
+        QTAILQ_REMOVE(&info->s->iotlb_lru, entry, lru);
+    }
+
+    return remove;
 }
 
 /* The shift of an addr for a certain level of paging structure */
@@ -302,9 +308,15 @@ static gboolean vtd_hash_remove_by_page(gpointer key, gpointer value,
     VTDIOTLBPageInvInfo *info = (VTDIOTLBPageInvInfo *)user_data;
     uint64_t gfn = (info->addr >> VTD_PAGE_SHIFT_4K) & info->mask;
     uint64_t gfn_tlb = (info->addr & entry->mask) >> VTD_PAGE_SHIFT_4K;
-    return (entry->domain_id == info->domain_id) &&
+    bool remove = (entry->domain_id == info->domain_id) &&
             (((entry->gfn & info->mask) == gfn) ||
              (entry->gfn == gfn_tlb));
+
+    if (remove) {
+        QTAILQ_REMOVE(&info->s->iotlb_lru, entry, lru);
+    }
+
+    return remove;
 }
 
 /* Reset all the gen of VTDAddressSpace to zero and set the gen of
@@ -329,6 +341,12 @@ static void vtd_reset_context_cache_locked(IntelIOMMUState *s)
 static void vtd_reset_iotlb_locked(IntelIOMMUState *s)
 {
     assert(s->iotlb);
+
+    while (!QTAILQ_EMPTY(&s->iotlb_lru)) {
+        VTDIOTLBEntry *entry = QTAILQ_FIRST(&s->iotlb_lru);
+        QTAILQ_REMOVE(&s->iotlb_lru, entry, lru);
+    }
+
     g_hash_table_remove_all(s->iotlb);
 }
 
@@ -337,6 +355,21 @@ static void vtd_reset_iotlb(IntelIOMMUState *s)
     vtd_iommu_lock(s);
     vtd_reset_iotlb_locked(s);
     vtd_iommu_unlock(s);
+}
+
+/* Must be called with IOMMU lock held. */
+static void vtd_evict_iotlb_entry(IntelIOMMUState *s)
+{
+    VTDIOTLBEntry *victim = QTAILQ_LAST(&s->iotlb_lru);
+
+    assert(victim);
+
+    trace_vtd_iotlb_page_evict(vtd_iotlb_hash(victim->key), victim->gfn,
+                               victim->slpte, victim->mask, victim->pasid,
+                               victim->domain_id);
+
+    QTAILQ_REMOVE(&s->iotlb_lru, victim, lru);
+    g_hash_table_remove(s->iotlb, victim->key);
 }
 
 static void vtd_reset_caches(IntelIOMMUState *s)
@@ -367,6 +400,10 @@ static VTDIOTLBEntry *vtd_lookup_iotlb(IntelIOMMUState *s, uint16_t source_id,
         key.pasid = pasid;
         entry = g_hash_table_lookup(s->iotlb, &key);
         if (entry) {
+            /* update lru */
+            QTAILQ_REMOVE(&s->iotlb_lru, entry, lru);
+            QTAILQ_INSERT_HEAD(&s->iotlb_lru, entry, lru);
+
             goto out;
         }
     }
@@ -387,9 +424,13 @@ static void vtd_update_iotlb(IntelIOMMUState *s, uint16_t source_id,
 
     trace_vtd_iotlb_page_update(source_id, addr, slpte, domain_id);
     if (g_hash_table_size(s->iotlb) >= VTD_IOTLB_MAX_SIZE) {
-        trace_vtd_iotlb_reset("iotlb exceeds size limit");
-        vtd_reset_iotlb_locked(s);
+        vtd_evict_iotlb_entry(s);
     }
+
+    key->gfn = gfn;
+    key->sid = source_id;
+    key->level = level;
+    key->pasid = pasid;
 
     entry->gfn = gfn;
     entry->domain_id = domain_id;
@@ -397,13 +438,12 @@ static void vtd_update_iotlb(IntelIOMMUState *s, uint16_t source_id,
     entry->access_flags = access_flags;
     entry->mask = vtd_slpt_level_page_mask(level);
     entry->pasid = pasid;
+    entry->key = key;
 
-    key->gfn = gfn;
-    key->sid = source_id;
-    key->level = level;
-    key->pasid = pasid;
+    assert(!g_hash_table_lookup(s->iotlb, key));
 
     g_hash_table_replace(s->iotlb, key, entry);
+    QTAILQ_INSERT_HEAD(&s->iotlb_lru, entry, lru);
 }
 
 /* Given the reg addr of both the message data and address, generate an
@@ -2198,12 +2238,16 @@ static void vtd_iotlb_domain_invalidate(IntelIOMMUState *s, uint16_t domain_id)
 {
     VTDContextEntry ce;
     VTDAddressSpace *vtd_as;
+    VTDIOTLBDomainInvInfo info = {
+        .s = s,
+        .domain_id = domain_id,
+    };
 
     trace_vtd_inv_desc_iotlb_domain(domain_id);
 
     vtd_iommu_lock(s);
     g_hash_table_foreach_remove(s->iotlb, vtd_hash_remove_by_domain,
-                                &domain_id);
+                                &info);
     vtd_iommu_unlock(s);
 
     QLIST_FOREACH(vtd_as, &s->vtd_as_with_notifiers, next) {
@@ -2268,6 +2312,7 @@ static void vtd_iotlb_page_invalidate(IntelIOMMUState *s, uint16_t domain_id,
     trace_vtd_inv_desc_iotlb_pages(domain_id, addr, am);
 
     assert(am <= VTD_MAMV);
+    info.s = s;
     info.domain_id = domain_id;
     info.addr = addr;
     info.mask = ~((1 << am) - 1);
@@ -4352,6 +4397,7 @@ static void vtd_realize(DeviceState *dev, Error **errp)
     /* No corresponding destroy */
     s->iotlb = g_hash_table_new_full(vtd_iotlb_hash, vtd_iotlb_equal,
                                      g_free, g_free);
+    QTAILQ_INIT(&s->iotlb_lru);
     s->vtd_address_spaces = g_hash_table_new_full(vtd_as_hash, vtd_as_equal,
                                       g_free, g_free);
     s->vtd_host_iommu_dev = g_hash_table_new_full(vtd_hiod_hash, vtd_hiod_equal,
