@@ -3117,6 +3117,7 @@ void *address_space_map(AddressSpace *as,
     hwaddr l, xlat;
     MemoryRegion *mr;
     FlatView *fv;
+    MemTxResult result;
 
     if (len == 0) {
         return NULL;
@@ -3141,8 +3142,14 @@ void *address_space_map(AddressSpace *as,
         memory_region_ref(mr);
         bounce.mr = mr;
         if (!is_write) {
-            flatview_read(fv, addr, MEMTXATTRS_UNSPECIFIED,
-                               bounce.buffer, l);
+            result = flatview_read(fv, addr, MEMTXATTRS_UNSPECIFIED,
+                                   bounce.buffer, l);
+            if (result) {
+                memory_region_unref(mr);
+                qemu_vfree(bounce.buffer);
+                *plen = 0;
+                return NULL;
+            }
         }
 
         *plen = l;
