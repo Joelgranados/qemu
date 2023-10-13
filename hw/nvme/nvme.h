@@ -385,6 +385,7 @@ enum {
 
 typedef struct NvmeSg {
     int flags;
+    DMADirection dir;
 
     union {
         QEMUSGList   qsg;

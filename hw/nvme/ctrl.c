@@ -702,6 +702,11 @@ static void nvme_req_clear(NvmeRequest *req)
     req->status = NVME_SUCCESS;
 }
 
+static inline void nvme_sg_init_header(NvmeCtrl *n, NvmeSg *sg, DMADirection dir)
+{
+    sg->dir = dir;
+}
+
 static inline void nvme_sg_init(NvmeCtrl *n, NvmeSg *sg, bool dma)
 {
     if (dma) {
@@ -3453,6 +3458,8 @@ static uint16_t nvme_read(NvmeCtrl *n, NvmeRequest *req)
         return nvme_dif_rw(n, req);
     }
 
+    nvme_sg_init_header(n, &req->sg, DMA_DIRECTION_FROM_DEVICE);
+
     status = nvme_map_data(n, nlb, req);
     if (status) {
         goto invalid;
@@ -5705,6 +5712,7 @@ static uint16_t nvme_identify(NvmeCtrl *n, NvmeRequest *req)
     trace_pci_nvme_identify(nvme_cid(req), c->cns, le16_to_cpu(c->ctrlid),
                             c->csi);
 
+    nvme_sg_init_header(n, &req->sg, DMA_DIRECTION_FROM_DEVICE);
     switch (c->cns) {
     case NVME_ID_CNS_NS:
         return nvme_identify_ns(n, req, true);
