@@ -378,19 +378,9 @@ typedef struct NvmeAsyncEvent {
     NvmeAerResult result;
 } NvmeAsyncEvent;
 
-enum {
-    NVME_SG_ALLOC = 1 << 0,
-    NVME_SG_DMA   = 1 << 1,
-};
-
 typedef struct NvmeSg {
-    int flags;
     DMADirection dir;
-
-    union {
-        QEMUSGList   qsg;
-        QEMUIOVector iov;
-    };
+    QEMUIOVector iov;
 } NvmeSg;
 
 typedef enum NvmeTxDirection {

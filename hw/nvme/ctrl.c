@@ -706,11 +706,6 @@ static inline void nvme_sg_init_header(NvmeCtrl *n, NvmeSg *sg, DMADirection dir
 {
     sg->dir = dir;
 }
-static inline void nvme_sg_init(NvmeCtrl *n, NvmeSg *sg)
-{
-    qemu_iovec_init(&sg->iov, 0);
-    sg->flags |= NVME_SG_ALLOC;
-}
 
 static inline void nvme_sg_unmap(NvmeSg *sg)
 {
@@ -864,7 +859,7 @@ static uint16_t nvme_map_prp(NvmeCtrl *n, NvmeSg *sg, uint64_t prp1,
 
     trace_pci_nvme_map_prp(trans_len, len, prp1, prp2, num_prps);
 
-    nvme_sg_init(n, sg);
+    qemu_iovec_init(&sg->iov, 0);
 
     status = nvme_map_addr(n, sg, prp1, trans_len);
     if (status) {
@@ -1039,7 +1034,7 @@ static uint16_t nvme_map_sgl(NvmeCtrl *n, NvmeSg *sg, NvmeSglDescriptor sgl,
 
     trace_pci_nvme_map_sgl(NVME_SGL_TYPE(sgl.type), len);
 
-    nvme_sg_init(n, sg);
+    qemu_iovec_init(&sg->iov, 0);
 
     /*
      * If the entire transfer can be described with a single data block it can
@@ -1192,7 +1187,7 @@ static uint16_t nvme_map_mptr(NvmeCtrl *n, NvmeSg *sg, size_t len,
         return status;
     }
 
-    nvme_sg_init(n, sg);
+    qemu_iovec_init(&sg->iov, 0);
     status = nvme_map_addr(n, sg, mptr, len);
     if (status) {
         nvme_sg_unmap(sg);
@@ -1221,7 +1216,7 @@ static uint16_t nvme_map_data(NvmeCtrl *n, uint32_t nlb, NvmeRequest *req)
             return status;
         }
 
-        nvme_sg_init(n, &req->sg);
+        qemu_iovec_init(&req->sg.iov, 0);
         nvme_sg_split(&sg, ns, &req->sg, NULL);
         nvme_sg_unmap(&sg);
 
@@ -1247,7 +1242,7 @@ static uint16_t nvme_map_mdata(NvmeCtrl *n, uint32_t nlb, NvmeRequest *req)
             return status;
         }
 
-        nvme_sg_init(n, &req->sg);
+        qemu_iovec_init(&req->sg.iov, 0);
         nvme_sg_split(&sg, ns, NULL, &req->sg);
         nvme_sg_unmap(&sg);
 
