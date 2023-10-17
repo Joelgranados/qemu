@@ -1412,12 +1412,7 @@ static inline void nvme_blk_write(BlockBackend *blk, int64_t offset,
                                   NvmeRequest *req)
 {
     assert(req->sg.flags & NVME_SG_ALLOC);
-
-    if (req->sg.flags & NVME_SG_DMA) {
-        req->aiocb = dma_blk_write(blk, &req->sg.qsg, offset, align, cb, req);
-    } else {
-        req->aiocb = blk_aio_pwritev(blk, offset, &req->sg.iov, 0, cb, req);
-    }
+    req->aiocb = blk_aio_pwritev(blk, offset, &req->sg.iov, 0, cb, req);
 }
 
 static void nvme_update_cq_eventidx(const NvmeCQueue *cq)
