@@ -714,7 +714,7 @@ static inline void nvme_sg_init(NvmeCtrl *n, NvmeSg *sg)
 
 static inline void nvme_sg_unmap(NvmeSg *sg)
 {
-    if (!(sg->flags & NVME_SG_ALLOC)) {
+    if (!(sg->iov.iov)) {
         return;
     }
 
@@ -737,7 +737,7 @@ static void nvme_sg_split(NvmeSg *sg, NvmeNamespace *ns, NvmeSg *data,
     size_t sg_len = sg->iov.size;
     int sg_idx = 0;
 
-    assert(sg->flags & NVME_SG_ALLOC);
+    assert(sg->iov.iov);
 
     while (sg_len) {
         sge_len = sg->iov.iov[sg_idx].iov_len;
@@ -1268,7 +1268,7 @@ static uint16_t nvme_tx_interleaved(NvmeCtrl *n, NvmeSg *sg, uint8_t *ptr,
     int sg_idx = 0;
     int ret;
 
-    assert(sg->flags & NVME_SG_ALLOC);
+    assert(sg->iov.iov);
 
     while (len) {
         sge_len = sg->iov.iov[sg_idx].iov_len;
@@ -1317,8 +1317,7 @@ static uint16_t nvme_tx_interleaved(NvmeCtrl *n, NvmeSg *sg, uint8_t *ptr,
 static uint16_t nvme_tx(NvmeCtrl *n, NvmeSg *sg, void *ptr, uint32_t len,
                         NvmeTxDirection dir)
 {
-    assert(sg->flags & NVME_SG_ALLOC);
-
+    assert(sg->iov.iov);
     size_t bytes;
 
     if (dir == NVME_TX_DIRECTION_TO_DEVICE) {
@@ -1403,7 +1402,7 @@ static inline void nvme_blk_read(BlockBackend *blk, int64_t offset,
                                  uint32_t align, BlockCompletionFunc *cb,
                                  NvmeRequest *req)
 {
-    assert(req->sg.flags & NVME_SG_ALLOC);
+    assert(req->sg.iov.iov);
     req->aiocb = blk_aio_preadv(blk, offset, &req->sg.iov, 0, cb, req);
 }
 
@@ -1411,7 +1410,7 @@ static inline void nvme_blk_write(BlockBackend *blk, int64_t offset,
                                   uint32_t align, BlockCompletionFunc *cb,
                                   NvmeRequest *req)
 {
-    assert(req->sg.flags & NVME_SG_ALLOC);
+    assert(req->sg.iov.iov);
     req->aiocb = blk_aio_pwritev(blk, offset, &req->sg.iov, 0, cb, req);
 }
 
