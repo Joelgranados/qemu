@@ -193,6 +193,15 @@ typedef struct IOMMUTLBEvent {
     IOMMUTLBEntry entry;
 } IOMMUTLBEvent;
 
+#define IOMMU_PRI_RESP_CODE_SUCCESS(val)            (!(val))
+#define IOMMU_PRI_RESP_CODE_INVALID_REQUEST(val)    ((val) == 0x1u)
+#define IOMMU_PRI_RESP_CODE_FAILURE(val)            ((val) & 0xeu)
+
+typedef struct IOMMUPRIResponse {
+    uint8_t rc;
+    uint16_t prgi;
+} IOMMUPRIResponse;
+
 /* RAM is pre-allocated and passed into qemu_ram_alloc_from_ptr */
 #define RAM_PREALLOC   (1 << 0)
 
