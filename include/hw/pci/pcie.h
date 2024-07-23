@@ -76,6 +76,9 @@ struct PCIExpressDevice {
     /* Offset of ATS capability in config space */
     uint16_t ats_cap;
 
+    /* PRI */
+    uint16_t pri_cap;
+
     /* ACS */
     uint16_t acs_cap;
 
@@ -86,6 +89,8 @@ struct PCIExpressDevice {
 
     /* ATS */
     PCIEATC atc;
+
+    bool pri_enabled;
 };
 
 #define COMPAT_PROP_PCP "power_controller_present"
@@ -146,6 +151,10 @@ void pcie_ari_init(PCIDevice *dev, uint16_t offset);
 void pcie_dev_ser_num_init(PCIDevice *dev, uint16_t offset, uint64_t ser_num);
 void pcie_ats_init(PCIDevice *dev, uint16_t offset, bool aligned);
 void pcie_ats_write_config(PCIDevice *dev, uint32_t addr, uint32_t val,
+                           int len);
+
+void pcie_pri_init(PCIDevice *dev, uint16_t offset, uint32_t capacity);
+void pcie_pri_write_config(PCIDevice *dev, uint32_t addr, uint32_t val,
                            int len);
 
 void pcie_cap_slot_pre_plug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,

@@ -1140,6 +1140,21 @@ void pcie_ats_init(PCIDevice *dev, uint16_t offset, bool aligned)
     pci_set_word(dev->wmask + dev->exp.ats_cap + PCI_ATS_CTRL, 0x800f);
 }
 
+void pcie_pri_init(PCIDevice *dev, uint16_t offset, uint32_t capacity)
+{
+    pcie_add_capability(dev, PCI_EXT_CAP_ID_PRI, PCI_PRI_VER, offset,
+                        PCI_EXT_CAP_PRI_SIZEOF);
+
+    pci_set_word(dev->config + offset + PCI_PRI_STATUS, PCI_PRI_STATUS_STOPPED);
+    pci_set_long(dev->config + offset + PCI_PRI_MAX_REQ, capacity);
+
+    pci_set_word(dev->wmask + offset + PCI_PRI_CTRL, 0x3);
+    pci_set_word(dev->w1cmask + offset + PCI_PRI_STATUS, 0x3);
+    pci_set_long(dev->wmask + offset + PCI_PRI_ALLOC_REQ, 0xffffffff);
+
+    dev->exp.pri_cap = offset;
+}
+
 void pcie_ats_write_config(PCIDevice *dev, uint32_t addr, uint32_t val,
                            int len)
 {
@@ -1166,6 +1181,34 @@ void pcie_ats_write_config(PCIDevice *dev, uint32_t addr, uint32_t val,
         } else {
             pcie_ats_reset(dev);
             dev->exp.atc.enabled = false;
+        }
+    }
+}
+
+void pcie_pri_write_config(PCIDevice *dev, uint32_t addr, uint32_t val,
+                           int len)
+{
+    uint32_t off;
+    uint16_t pri_cap = dev->exp.pri_cap;
+
+    if (!pri_cap || addr < pri_cap) {
+        return;
+    }
+
+    off = addr - pri_cap;
+    if (off >= PCI_EXT_CAP_PRI_SIZEOF) {
+        return;
+    }
+
+    trace_pcie_pri_write_config(dev->name, pci_dev_bus_num(dev),
+                                PCI_SLOT(dev->devfn), PCI_FUNC(dev->devfn),
+                                off, val);
+
+    if (range_covers_byte(off, len, PCI_PRI_CTRL)) {
+        if (val & PCI_PRI_CTRL_ENABLE) {
+            dev->exp.pri_enabled = true;
+        } else {
+            dev->exp.pri_enabled = false;
         }
     }
 }

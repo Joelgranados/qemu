@@ -1633,6 +1633,7 @@ void pci_default_write_config(PCIDevice *d, uint32_t addr, uint32_t val_in, int 
     msix_write_config(d, addr, val_in, l);
     pcie_sriov_config_write(d, addr, val_in, l);
     pcie_ats_write_config(d, addr, val_in, l);
+    pcie_pri_write_config(d, addr, val_in, l);
 }
 
 /***********************************************************/

@@ -7,6 +7,7 @@ pci_route_irq(int dev_irq, const char *dev_path, int parent_irq, const char *par
 
 # pcie.c
 pcie_ats_write_config(const char *dev, uint32_t bus, uint32_t slot, uint32_t func, unsigned off, unsigned val) "%s %02x:%02x.%x @0x%x -> 0x%x"
+pcie_pri_write_config(const char *dev, uint32_t bus, uint32_t slot, uint32_t func, unsigned off, unsigned val) "%s %02x:%02x.%x @0x%x -> 0x%x"
 
 # dma atc
 pcie_ats_lookup_hit(uint32_t devfn, uint64_t iova) "%d iova 0x%"PRIx64""
