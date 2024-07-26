@@ -2856,6 +2856,16 @@ void address_space_cache_invalidate(MemoryRegionCache *cache,
  */
 void address_space_cache_destroy(MemoryRegionCache *cache);
 
+/**
+ * address_space_get_memory_region: resolve the memory region containing addr
+ *
+ * @as: #AddressSpace
+ * @addr: address within the address space
+ * @is_mmio: if this can be mmio
+ */
+MemoryRegion *address_space_get_memory_region(AddressSpace *as, hwaddr addr,
+                                              bool is_mmio);
+
 /* address_space_get_iotlb_entry: translate an address into an IOTLB
  * entry. Should be called from an RCU critical section.
  */
