@@ -88,6 +88,8 @@ static Property pci_props[] = {
     DEFINE_PROP_BIT("x-pcie-ats", PCIDevice, cap_present,
                     QEMU_PCIE_CAP_ATS_BITNR, false),
     DEFINE_PROP_UINT32("x-pcie-ats-cache-size", PCIDevice, exp.atc.size, 64),
+    DEFINE_PROP_BIT("x-pcie-ats-pri", PCIDevice, cap_present,
+                    QEMU_PCIE_CAP_PRI_BITNR, false),
     DEFINE_PROP_END_OF_LIST()
 };
 

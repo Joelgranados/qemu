@@ -72,4 +72,7 @@ void pcie_ats_iommu_region_add(MemoryListener *listener,
 void pcie_ats_iommu_region_del(MemoryListener *listener,
                                MemoryRegionSection *section);
 
+int pcie_ats_page_request(PCIDevice *dev, hwaddr addr, QEMUBH *bh,
+                          IOMMUAccessFlags flags);
+
 #endif /* QEMU_PCIE_ATS_H */

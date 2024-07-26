@@ -257,3 +257,23 @@ void pcie_ats_iommu_region_del(MemoryListener *listener,
         }
     }
 }
+
+int pcie_ats_page_request(PCIDevice *dev, hwaddr addr, QEMUBH *bh,
+                          IOMMUAccessFlags flags)
+{
+    AddressSpace *as = pci_device_iommu_address_space(dev);
+    MemoryRegion *mr = address_space_get_memory_region(as, addr, false);
+
+    IOMMUMemoryRegion *iommu_mr = memory_region_get_iommu(mr);
+    IOMMUMemoryRegionClass *imrc =
+        memory_region_get_iommu_class_nocheck(iommu_mr);
+
+    if (trace_event_get_state(TRACE_PCIE_ATS_PAGE_REQUEST)) {
+        uint32_t devfn = PCI_BUILD_BDF(pci_bus_num(pci_get_bus(dev)),
+                                       dev->devfn);
+
+        trace_pcie_ats_page_request(devfn, addr, flags);
+    }
+
+    return imrc->page_request(iommu_mr, addr, bh, flags);
+}

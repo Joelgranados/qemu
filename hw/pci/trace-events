@@ -16,6 +16,7 @@ pcie_ats_evict_entry(uint32_t devfn, uint64_t iova) "%d iova 0x%"PRIx64""
 pcie_ats_update(uint32_t devfn, uint64_t iova) "%d iova 0x%"PRIx64""
 pcie_ats_purge(uint32_t devfn, uint64_t iova) "%d iova 0x%"PRIx64""
 pcie_ats_iommu_unmap_notify(uint32_t devfn, uint64_t iova, uint64_t mask) "%d iova 0x%"PRIx64" mask 0x%"PRIx64""
+pcie_ats_page_request(uint32_t devfn, uint64_t iova, int flags) "%"PRIu32" iova 0x%"PRIx64" flags %d"
 
 # pci_host.c
 pci_cfg_read(const char *dev, uint32_t bus, uint32_t slot, uint32_t func, unsigned offs, unsigned val) "%s %02x:%02x.%x @0x%x -> 0x%x"
