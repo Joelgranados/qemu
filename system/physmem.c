@@ -520,6 +520,18 @@ static MemoryRegionSection flatview_do_translate(FlatView *fv,
     return *section;
 }
 
+MemoryRegion *address_space_get_memory_region(AddressSpace *as, hwaddr addr,
+                                              bool is_mmio)
+{
+    FlatView *fv = address_space_to_flatview(as);
+    MemoryRegionSection *section;
+
+    section = address_space_lookup_region(flatview_to_dispatch(fv), addr,
+                                          is_mmio);
+
+    return section->mr;
+}
+
 /* Called from RCU critical section */
 IOMMUTLBEntry address_space_get_iotlb_entry(AddressSpace *as, hwaddr addr,
                                             bool is_write, MemTxAttrs attrs)
