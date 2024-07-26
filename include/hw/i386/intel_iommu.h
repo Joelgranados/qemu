@@ -146,6 +146,8 @@ struct VTDAddressSpace {
      * with the guest IOMMU pgtables for a device.
      */
     IOVATree *iova_tree;
+
+    QEMUBH *bh_pr;
 };
 
 struct VTDIOTLBEntry {
