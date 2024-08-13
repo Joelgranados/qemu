@@ -2077,8 +2077,11 @@ static bool vtd_do_iommu_translate(VTDAddressSpace *vtd_as, PCIBus *bus,
     ret_fr = vtd_iova_to_slpte(s, &ce, addr, is_write, &slpte, &level,
                                &reads, &writes, s->aw_bits, pasid, iommu_idx);
     if (ret_fr) {
-        vtd_report_fault(s, -ret_fr, is_fpd_set, source_id,
-                         addr, is_write, pasid != PCI_NO_PASID, pasid);
+        if (ret_fr != -VTD_FR_WRITE && ret_fr != -VTD_FR_READ) {
+            vtd_report_fault(s, -ret_fr, is_fpd_set, source_id,
+                             addr, is_write, pasid != PCI_NO_PASID, pasid);
+        }
+
         goto error;
     }
 
