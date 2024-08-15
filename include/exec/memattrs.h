@@ -52,6 +52,8 @@ typedef struct MemTxAttrs {
     unsigned int memory:1;
     /* Requester ID (for MSI for example) */
     unsigned int requester_id:16;
+    /* Translation requested; do not report error on translation failure */
+    unsigned int translation_only:1;
 } MemTxAttrs;
 
 /* Bus masters which don't specify any attributes will get this,
@@ -60,6 +62,8 @@ typedef struct MemTxAttrs {
  * from "didn't specify" if necessary).
  */
 #define MEMTXATTRS_UNSPECIFIED ((MemTxAttrs) { .unspecified = 1 })
+
+#define MEMTXATTRS_TRANSLATION ((MemTxAttrs) { .translation_only = 1 })
 
 /* New-style MMIO accessors can indicate that the transaction failed.
  * A zero (MEMTX_OK) response means success; anything else is a failure

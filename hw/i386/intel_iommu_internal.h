@@ -29,6 +29,12 @@
 #define HW_I386_INTEL_IOMMU_INTERNAL_H
 #include "hw/i386/intel_iommu.h"
 
+typedef enum VTDIOMMUIndex {
+    VTD_IDX_DEFAULT = 0,
+    VTD_IDX_ATS = 1,
+    VTD_IDX_COUNT = 2,
+} VTDIOMMUIndex;
+
 /*
  * Intel IOMMU register specification
  */
