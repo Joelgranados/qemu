@@ -20,6 +20,7 @@ struct PCIeATSState {
     struct dma_state {
         uint64_t addr;
 
+//#define PCIE_TESTDEV_ACTIVE_ATS
 #define PCIE_ATS_DMA_RUN             0x1
 #define PCIE_ATS_DMA_DIR(cmd)        (((cmd) >> 1) & 0x1)
 # define PCIE_ATS_DMA_FROM_PCI       0
@@ -36,7 +37,6 @@ struct PCIeATSState {
 static void pcie_ats_dma_bh(void *opaque)
 {
     PCIeATSState *pcie_ats = opaque;
-    MemTxResult res;
     DMADirection dir =
         PCIE_ATS_DMA_DIR(pcie_ats->dma.cmd) == PCIE_ATS_DMA_FROM_PCI ?
             DMA_DIRECTION_FROM_DEVICE : DMA_DIRECTION_TO_DEVICE;
@@ -45,7 +45,12 @@ static void pcie_ats_dma_bh(void *opaque)
         return;
     }
 
-    res = pci_dma_rw(&pcie_ats->pdev, pcie_ats->dma.addr, pcie_ats->dma.buf,
+#ifndef PCIE_TESTDEV_ACTIVE_ATS
+    pci_dma_rw(&pcie_ats->pdev, pcie_ats->dma.addr, pcie_ats->dma.buf,
+               BUF_SIZE, dir, MEMTXATTRS_UNSPECIFIED);
+
+#else
+    MemTxResult res = pci_dma_rw(&pcie_ats->pdev, pcie_ats->dma.addr, pcie_ats->dma.buf,
                      BUF_SIZE, dir, MEMTXATTRS_UNSPECIFIED);
 
     if (res == MEMTX_ACCESS_ERROR) {
@@ -59,6 +64,7 @@ static void pcie_ats_dma_bh(void *opaque)
             return;
         }
     }
+#endif /* PCIE_TESTDEV_ACTIVE_ATS */
 
     pcie_ats->dma.cmd &= ~PCIE_ATS_DMA_RUN;
 }
@@ -120,12 +126,13 @@ static void pcie_ats_realize(PCIDevice *pdev, Error **errp)
 {
     PCIeATSState *pcie_ats = PCIE_ATS_DEVICE(pdev);
     uint8_t *pci_conf = pdev->config;
-    uint16_t cap_offset = PCI_CONFIG_SPACE_SIZE;
 
     pci_config_set_interrupt_pin(pci_conf, 1);
 
     pcie_endpoint_cap_init(pdev, 0x80);
 
+#ifdef PCIE_TESTDEV_ACTIVE_ATS
+    uint16_t cap_offset = PCI_CONFIG_SPACE_SIZE;
     if (pdev->cap_present & QEMU_PCIE_CAP_ATS) {
         pcie_ats_init(pdev, cap_offset, 1);
         cap_offset += PCI_EXT_CAP_ATS_SIZEOF;
@@ -135,6 +142,7 @@ static void pcie_ats_realize(PCIDevice *pdev, Error **errp)
             cap_offset += PCI_EXT_CAP_PRI_SIZEOF;
         }
     }
+#endif /* PCIE_TESTDEV_ACTIVE_ATS */
 
     memory_region_init_io(&pcie_ats->mmio, OBJECT(pcie_ats),
                           &pcie_ats_mmio_ops, pcie_ats, "pcie-ats-mmio",
