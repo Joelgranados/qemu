@@ -2637,6 +2637,8 @@ static bool vtd_process_wait_desc(IntelIOMMUState *s, VTDInvDesc *inv_desc)
     } else if (inv_desc->lo & VTD_INV_DESC_WAIT_IF) {
         /* Interrupt flag */
         vtd_generate_completion_event(s);
+    } else if(inv_desc->lo & VTD_INV_DESC_WAIT_FN) {
+        /* TODO : add Invalidate wait fence operation logic*/
     } else {
         error_report_once("%s: invalid wait desc: hi=%"PRIx64", lo=%"PRIx64
                           " (unknown type)", __func__, inv_desc->hi,
@@ -4266,8 +4268,9 @@ static void vtd_cap_init(IntelIOMMUState *s)
     }
 
     /* TODO: read cap/ecap from host to decide which cap to be exposed. */
+    /* TODO: enable PDS when page drain support is added*/
     if (s->scalable_mode) {
-        s->ecap |= VTD_ECAP_SMTS | VTD_ECAP_SLTS | VTD_ECAP_PRS | VTD_ECAP_PDS;
+        s->ecap |= VTD_ECAP_SMTS | VTD_ECAP_SLTS | VTD_ECAP_PRS;
     }
 
     if (s->snoop_control) {
