@@ -8,6 +8,8 @@
 #include "qemu/main-loop.h" /* iothread mutex */
 #include "qemu/module.h"
 #include "qapi/visitor.h"
+#include "hw/acpi/acpi_aml_interface.h"
+#include "hw/acpi/aml-build.h"
 
 #define TYPE_PCIE_ATS_DEVICE "pcie-ats-testdev"
 OBJECT_DECLARE_SIMPLE_TYPE(PCIeATSState, PCIE_ATS_DEVICE)
@@ -31,6 +33,13 @@ struct PCIeATSState {
     } dma;
 
     QEMUBH *dma_bh;
+
+    /* ACPI Power Management */
+    uint32_t power_state;
+#define PCIE_ATS_POWER_D0            0  /* Fully On */
+#define PCIE_ATS_POWER_D1            1  /* Low Power */  
+#define PCIE_ATS_POWER_D2            2  /* Lower Power */
+#define PCIE_ATS_POWER_D3            3  /* Off */
 };
 
 static void pcie_ats_dma_bh(void *opaque)
@@ -42,6 +51,12 @@ static void pcie_ats_dma_bh(void *opaque)
             DMA_DIRECTION_FROM_DEVICE : DMA_DIRECTION_TO_DEVICE;
 
     if (!(pcie_ats->dma.cmd & PCIE_ATS_DMA_RUN)) {
+        return;
+    }
+
+    /* Check power state - only allow DMA in D0 state */
+    if (pcie_ats->power_state != PCIE_ATS_POWER_D0) {
+        pcie_ats->dma.cmd &= ~PCIE_ATS_DMA_RUN;
         return;
     }
 
@@ -68,6 +83,11 @@ static uint64_t pcie_ats_mmio_read(void *opaque, hwaddr addr, unsigned size)
     PCIeATSState *pcie_ats = opaque;
     uint64_t val = ~0ULL;
 
+    /* Return all 1s if device is in D3 state */
+    if (pcie_ats->power_state == PCIE_ATS_POWER_D3) {
+        return val;
+    }
+
     switch (addr) {
     case 0x0:
         val = ldn_le_p(&pcie_ats->dma.addr, size);
@@ -78,15 +98,57 @@ static uint64_t pcie_ats_mmio_read(void *opaque, hwaddr addr, unsigned size)
     case 0x8:
         val = ldl_le_p(&pcie_ats->dma.cmd);
         break;
+    case 0xc:
+        /* Power management status register */
+        val = pcie_ats->power_state;
+        break;
     }
 
     return val;
+}
+
+static void pcie_ats_set_power_state(PCIeATSState *pcie_ats, uint32_t state)
+{
+    PCIDevice *pdev = &pcie_ats->pdev;
+
+    if (pcie_ats->power_state == state) {
+        return;
+    }
+
+    pcie_ats->power_state = state;
+
+    switch (state) {
+    case PCIE_ATS_POWER_D0:
+        /* Device fully powered - enable all functionality */
+        pci_set_power(pdev, true);
+        memory_region_set_enabled(&pcie_ats->mmio, true);
+        break;
+    case PCIE_ATS_POWER_D1:
+    case PCIE_ATS_POWER_D2:
+        /* Lower power states - reduce functionality but keep device accessible */
+        pci_set_power(pdev, true);
+        memory_region_set_enabled(&pcie_ats->mmio, true);
+        break;
+    case PCIE_ATS_POWER_D3:
+        /* Device powered off - disable functionality */
+        if (pcie_ats->dma.cmd & PCIE_ATS_DMA_RUN) {
+            pcie_ats->dma.cmd &= ~PCIE_ATS_DMA_RUN;
+        }
+        memory_region_set_enabled(&pcie_ats->mmio, false);
+        pci_set_power(pdev, false);
+        break;
+    }
 }
 
 static void pcie_ats_mmio_write(void *opaque, hwaddr addr, uint64_t val,
                                 unsigned size)
 {
     PCIeATSState *pcie_ats = opaque;
+
+    /* Ignore writes if device is in D3 state */
+    if (pcie_ats->power_state == PCIE_ATS_POWER_D3) {
+        return;
+    }
 
     switch (addr) {
     case 0x0:
@@ -103,6 +165,12 @@ static void pcie_ats_mmio_write(void *opaque, hwaddr addr, uint64_t val,
         }
 
         break;
+    case 0xc:
+        /* Power management control register */
+        if (val <= PCIE_ATS_POWER_D3) {
+            pcie_ats_set_power_state(pcie_ats, val);
+        }
+        break;
     }
 }
 
@@ -116,11 +184,47 @@ static const MemoryRegionOps pcie_ats_mmio_ops = {
     },
 };
 
+static void build_pcie_ats_aml(AcpiDevAmlIf *adev, Aml *scope)
+{
+    Aml *method;
+
+    /* _PS0 - Power State 0 (D0 - Fully On) */
+    method = aml_method("_PS0", 0, AML_NOTSERIALIZED);
+    aml_append(method, aml_debug());
+    aml_append(scope, method);
+
+    /* _PS3 - Power State 3 (D3 - Off) */
+    method = aml_method("_PS3", 0, AML_NOTSERIALIZED);
+    aml_append(method, aml_debug());
+    aml_append(scope, method);
+
+    /* _S1D - Highest D-state for S1 system state */
+    method = aml_method("_S1D", 0, AML_NOTSERIALIZED);
+    aml_append(method, aml_return(aml_int(PCIE_ATS_POWER_D1)));
+    aml_append(scope, method);
+
+    /* _S2D - Highest D-state for S2 system state */
+    method = aml_method("_S2D", 0, AML_NOTSERIALIZED);
+    aml_append(method, aml_return(aml_int(PCIE_ATS_POWER_D2)));
+    aml_append(scope, method);
+
+    /* _S3D - Highest D-state for S3 system state (suspend-to-RAM) */
+    method = aml_method("_S3D", 0, AML_NOTSERIALIZED);
+    aml_append(method, aml_return(aml_int(PCIE_ATS_POWER_D3)));
+    aml_append(scope, method);
+
+    /* _S4D - Highest D-state for S4 system state (suspend-to-disk) */
+    method = aml_method("_S4D", 0, AML_NOTSERIALIZED);
+    aml_append(method, aml_return(aml_int(PCIE_ATS_POWER_D3)));
+    aml_append(scope, method);
+}
+
 static void pcie_ats_realize(PCIDevice *pdev, Error **errp)
 {
     PCIeATSState *pcie_ats = PCIE_ATS_DEVICE(pdev);
     uint8_t *pci_conf = pdev->config;
     uint16_t cap_offset = PCI_CONFIG_SPACE_SIZE;
+    int pm_cap_offset;
 
     pci_config_set_interrupt_pin(pci_conf, 1);
 
@@ -144,12 +248,25 @@ static void pcie_ats_realize(PCIDevice *pdev, Error **errp)
                      &pcie_ats->mmio);
 
     pcie_ats->dma_bh = qemu_bh_new(pcie_ats_dma_bh, pcie_ats);
+
+    /* Add PCI Power Management capability */
+    pm_cap_offset = pci_add_capability(pdev, PCI_CAP_ID_PM, 0, PCI_PM_SIZEOF, errp);
+    if (pm_cap_offset < 0) {
+        return;
+    }
+    pci_set_word(pdev->config + pm_cap_offset + PCI_PM_PMC,
+                 PCI_PM_CAP_D1 | PCI_PM_CAP_D2 | PCI_PM_CAP_DSI);
+
+    /* Initialize power management - device starts in D0 state */
+    pcie_ats->power_state = PCIE_ATS_POWER_D0;
+    pci_set_power(pdev, true);
 }
 
 static void pcie_ats_class_init(ObjectClass *class, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(class);
     PCIDeviceClass *pdc = PCI_DEVICE_CLASS(class);
+    AcpiDevAmlIfClass *adevc = ACPI_DEV_AML_IF_CLASS(class);
 
     pdc->realize = pcie_ats_realize;
     pdc->vendor_id = PCI_VENDOR_ID_QEMU;
@@ -160,12 +277,15 @@ static void pcie_ats_class_init(ObjectClass *class, void *data)
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 
     dc->desc = "PCI Express ATS/PRI Test Device";
+
+    adevc->build_dev_aml = build_pcie_ats_aml;
 }
 
 static void pcie_ats_register_types(void)
 {
     static InterfaceInfo interfaces[] = {
         { INTERFACE_PCIE_DEVICE },
+        { TYPE_ACPI_DEV_AML_IF },
         { },
     };
 
