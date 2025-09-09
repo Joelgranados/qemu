@@ -4314,7 +4314,7 @@ static void vtd_cap_init(IntelIOMMUState *s)
 
     /* TODO: read cap/ecap from host to decide which cap to be exposed. */
     if (s->scalable_mode) {
-        s->ecap |= VTD_ECAP_SMTS | VTD_ECAP_SLTS | VTD_ECAP_PRS | VTD_ECAP_PDS;
+        s->ecap |= VTD_ECAP_SMTS | VTD_ECAP_SLTS | VTD_ECAP_PRS;
     }
 
     if (s->snoop_control) {
