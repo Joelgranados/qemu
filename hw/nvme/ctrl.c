@@ -686,13 +686,60 @@ static int nvme_addr_write(NvmeCtrl *n, hwaddr addr, const void *buf, int size)
     return pci_dma_write(PCI_DEVICE(n), addr, buf, size);
 }
 
+static uint16_t nvme_prp_ent_addr(NvmeCtrl *n, dma_addr_t prplst_addr, size_t off,
+                                  dma_addr_t *ent)
+{
+    g_autofree uint64_t *prplst = g_new(uint64_t, n->max_prp_ents);
+    size_t nents;
+    int ret;
+
+    if (prplst_addr & (n->page_size - 1)) {
+        trace_pci_nvme_err_invalid_prplist_ent(prplst_addr);
+        return NVME_INVALID_PRP_OFFSET | NVME_DNR;
+    }
+
+    while (1) {
+        nents = MIN(off, n->max_prp_ents) || 1;
+        ret = nvme_addr_read(n, prplst_addr, (void *)prplst, nents * sizeof(uint64_t));
+        if (ret) {
+            trace_pci_nvme_err_addr_read(prplst_addr);
+            return NVME_DATA_TRAS_ERROR;
+        }
+        if (off < n->max_prp_ents) {
+            *ent = le64_to_cpu(prplst[off]);
+            if (*ent & (n->page_size - 1)) {
+                trace_pci_nvme_err_invalid_prplist_ent(*ent);
+                return NVME_INVALID_PRP_OFFSET | NVME_DNR;
+            }
+            return NVME_SUCCESS;
+        } else {
+            off -= nents;
+            prplst_addr = le64_to_cpu(prplst[n->max_prp_ents - 1]);
+        }
+    }
+}
+
 static uint16_t nvme_cdq_entry_addr(NvmeCtrl *n, dma_addr_t *addr, NvmeCDQ *q,
                                     size_t qndx)
 {
-    if (!q->pc) {
-        return NVME_INVALID_FIELD | NVME_DNR;
+    uint32_t q_page_ents, page_ndx, page_offset;
+    uint16_t ret;
+
+    if (q->pc) {
+        *addr = q->dptr.addr + qndx * q->entry_size;
+        return NVME_SUCCESS;
     }
-    *addr = q->dptr.addr + qndx * q->entry_size;
+
+    q_page_ents = n->page_size / q->entry_size;
+    page_ndx = qndx / q_page_ents;
+
+    ret = nvme_prp_ent_addr(n, q->dptr.prplst, page_ndx, addr);
+    if (ret) {
+        return ret;
+    }
+
+    page_offset = qndx % q_page_ents;
+    *addr = (*addr) + page_offset * q->entry_size;
     return NVME_SUCCESS;
 }
 
