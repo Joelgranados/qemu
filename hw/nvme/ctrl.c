@@ -778,7 +778,7 @@ static uint16_t nvme_cdq_enqueue_mqudf0(NvmeCtrl *n, NvmeCDQ *q,
                            NVME_AER_INFO_CDQ_FULL, 0, q->mmc.cdqid);
     }
 
-    ret = nvme_addr_write(n, tail_addr, entry, q->entry_size);
+    ret = nvme_addr_write(q->mmc.n, tail_addr, entry, q->entry_size);
     if (ret) {
         q->tail = tail_pos;
         return ret;
