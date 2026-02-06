@@ -749,6 +749,21 @@ static inline uint16_t nvme_cdq_tail_addr(NvmeCtrl *n, NvmeCDQ *q,
     return nvme_cdq_entry_addr(n, addr, q, q->tail);
 }
 
+static void nvme_clear_events(NvmeCtrl *n, uint8_t event_type)
+{
+    NvmeAsyncEvent *event, *next;
+
+    n->aer_mask &= ~(1 << event_type);
+
+    QTAILQ_FOREACH_SAFE(event, &n->aer_queue, entry, next) {
+        if (event->result.event_type == event_type) {
+            QTAILQ_REMOVE(&n->aer_queue, event, entry);
+            n->aer_queued--;
+            g_free(event);
+        }
+    }
+}
+
 static uint16_t nvme_cdq_enqueue_mqudf0(NvmeCtrl *n, NvmeCDQ *q,
                                         NvmeMqUdf0 *entry)
 {
@@ -788,6 +803,8 @@ static uint16_t nvme_cdq_enqueue_mqudf0(NvmeCtrl *n, NvmeCDQ *q,
         nvme_enqueue_event(q->mmc.n, NVME_AER_TYPE_ONE_SHOT,
                            NVME_AER_INFO_CDQ_TPT, 0, q->mmc.cdqid);
         q->etpt = false;
+
+        nvme_clear_events(q->mmc.n, NVME_AER_TYPE_ONE_SHOT);
     }
     return NVME_SUCCESS;
 }
@@ -1896,21 +1913,6 @@ static void nvme_smart_event(NvmeCtrl *n, uint8_t event)
     }
 
     nvme_enqueue_event(n, NVME_AER_TYPE_SMART, aer_info, NVME_LOG_SMART_INFO, 0);
-}
-
-static void nvme_clear_events(NvmeCtrl *n, uint8_t event_type)
-{
-    NvmeAsyncEvent *event, *next;
-
-    n->aer_mask &= ~(1 << event_type);
-
-    QTAILQ_FOREACH_SAFE(event, &n->aer_queue, entry, next) {
-        if (event->result.event_type == event_type) {
-            QTAILQ_REMOVE(&n->aer_queue, event, entry);
-            n->aer_queued--;
-            g_free(event);
-        }
-    }
 }
 
 static inline uint16_t nvme_check_mdts(NvmeCtrl *n, size_t len)
